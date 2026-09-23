@@ -2,20 +2,31 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const server = http.createServer((requst, response) => {
-    if (request.url === "/" || requst.url === "/index.html") {
-        fs.readFile(path.join(__dirname, "index.html"), (error, data) => {
-            if (error) {
-                response.writeHead(500);
-                return response.end("Error loading index.html");
-            }
-            response.writeHead(200, { "Content-Type": "text/html" });
-            response.end(data);
-        })
+const mimeTypes = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".png": "image/png",
+    ".json": "application/json"
+};
+
+const server = http.createServer((request, response) => {
+    let filePath;
+    if (request.url === "/") {
+        filePath = path.join(__dirname, "index.html");
     } else {
-        response.writeHead(404);
-        response.end("Not Found");
+        filePath = path.join(__dirname, request.url);
     }
+    fs.readFile(filePath, (error, data) => {
+        if (error) {
+            response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+            return response.end(`${filePath} Not Found`);
+        }
+        const ext = path.extname(filePath).toLowerCase();
+        const contentType = mimeTypes[ext] || "application/octet-stream";
+        response.writeHead(200, { "Content-Type": contentType });
+        response.end(data);
+    });
 });
 
 server.listen(3000, () => {
