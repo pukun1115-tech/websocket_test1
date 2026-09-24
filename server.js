@@ -13,9 +13,9 @@ const mimeTypes = {
 const server = http.createServer((request, response) => {
     let filePath;
     if (request.url === "/") {
-        filePath = path.join(__dirname, "public", "index.html");
+        filePath = path.join(__dirname, "index.html");
     } else {
-        filePath = path.join(__dirname, "public", request.url);
+        filePath = path.join(__dirname, request.url);
     }
     fs.readFile(filePath, (error, data) => {
         if (error) {
@@ -54,12 +54,13 @@ server.on("upgrade", (request, socket, head) => {
     }
 
     // WebSocketの仕様に沿ってレスポンス用のマジック文字列を結合・ハッシュ化
-    const hash = crypto
-        .createHash("sha1")
-        .update(acceptKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-        .digest("base64");
+    const hash = crypto.createHash("sha1").update(acceptKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
 
-    // ハンドシェイク（接続確立）の返答を送信
+    //接続できたとブラウザに伝える
+    //"HTTP/1.1 101 Switching Protocols\r\n"はプロトコルの切り替えが成功したということ
+    //"Upgrade: websocket\r\n"はWebSocketに切り替えるということ
+    //"Connection: Upgrade\r\n"は現在の接続を別のものに変える(Upgrade)するということ
+    //`Sec-WebSocket-Accept: ${hash}\r\n\r\n`はサーバーがWebSocket通信に対応していることをブラウザに伝えるためのもの
     socket.write(
         "HTTP/1.1 101 Switching Protocols\r\n" +
         "Upgrade: websocket\r\n" +
@@ -69,12 +70,12 @@ server.on("upgrade", (request, socket, head) => {
 
     // 新しいプレイヤーを登録（ランダムなIDと色、初期位置を設定）
     const playerId = Math.random().toString(36).substring(2, 9);
-    players[playerId] = { id: playerId, x: 100, y: 100, color: '#' + Math.floor(Math.random()*16777215).toString(16) };
+    players[playerId] = { id: playerId, x: 100, y: 100, color: "rgba(0, 255, 0, 1)" };
     clients.push({ id: playerId, socket: socket });
 
     console.log(`Player connected: ${playerId}`);
 
-    // 新規プレイヤーに初期状態を、全員に新しいプレイヤー情報を送る
+    //全員に新しいプレイヤー情報を送る
     broadcast({ type: "init", id: playerId, players: players });
 
     // データを受信したとき
@@ -95,9 +96,9 @@ server.on("upgrade", (request, socket, head) => {
 function handleRawData(playerId, buffer) {
     const firstByte = buffer[0];
     const secondByte = buffer[1];
-    
+
     // テキストデータ（0x81）以外は無視
-    if (firstByte !== 129) return; 
+    if (firstByte !== 129) return;
 
     const length = secondByte & 127;
     let maskingKeyIndex = 2;
@@ -158,7 +159,7 @@ function broadcast(data) {
     for (const c of clients) {
         try {
             c.socket.write(frame);
-        } catch(error) {
+        } catch (error) {
             continue;
         }
     }
@@ -176,5 +177,3 @@ function handleDisconnect(playerId) {
         broadcast({ type: "remove", id: playerId });
     }
 }
-
-
