@@ -13,9 +13,9 @@ const mimeTypes = {
 const server = http.createServer((request, response) => {
     let filePath;
     if (request.url === "/") {
-        filePath = path.join(__dirname, "index.html");
+        filePath = path.join(__dirname, "public", "index.html");
     } else {
-        filePath = path.join(__dirname, request.url);
+        filePath = path.join(__dirname, "public", request.url);
     }
     fs.readFile(filePath, (error, data) => {
         if (error) {
