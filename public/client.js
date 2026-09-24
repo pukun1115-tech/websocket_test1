@@ -1,19 +1,47 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+let ws = null;
+let myId = null;
+let players = {};
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const player = {
-    x: 100,
-    y: 100,
-    width: 40,
-    height: 40,
-    speed: 3,
-    color: "rgba(0,255,0,1)"
-};
-
 const keys = {};
+
+function connect() {
+    ws = new WebSocket("ws://localhost:3000");
+
+    ws.addEventListener("message", (event) => {
+        try {
+            const message = JSON.parse(event.data);
+
+            if (message.type === "init") {
+                myId = message.id;
+                players = message.players;
+            } else if (message.type === "update") {
+                players = message.players;
+            } else if (message.type === "remove") {
+                delete players[message.id];
+            }
+        } catch (error) {
+            console.error("メッセージ解析エラー:", error);
+        }
+    });
+
+    ws.addEventListener("close", () => {
+        console.log("接続が切れました");
+        myId = null;
+        players = {};
+        setTimeout(connect, 1000);
+    });
+
+    ws.addEventListener("error", (error) => {
+        console.error("WebSocketエラー:", error);
+    });
+}
+
 
 window.addEventListener("keydown", (event) => {
     keys[event.code] = true;
@@ -29,6 +57,8 @@ window.addEventListener("resize", () => {
 });
 
 function update() {
+    if (!myId || !players[myId]) return;
+
     let moveX = 0;
     let moveY = 0;
 
@@ -38,9 +68,13 @@ function update() {
     if (keys["ArrowDown"] || keys["KeyS"]) moveY += 1;
 
     if (moveX !== 0 || moveY !== 0) {
+        // || 0なのはMath.hypot(moveX, moveY)が0のとき0除算を防ぐため
         const length = Math.hypot(moveX, moveY) || 1;
-        player.x += (moveX / length) * player.speed;
-        player.y += (moveY / length) * player.speed;
+
+        //ws.readyStateがWebSocket.OPENのときのみ送信
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "move", x: players[myId].x + (moveX / length) * 3, y: players[myId].y + (moveY / length) * 3 }));
+        }
     }
 }
 
@@ -62,8 +96,14 @@ function draw() {
         ctx.stroke();
     }
 
-    ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.width, player.height);
+    for (const id in players) {
+        const p = players[id];
+        const drawX = p.x;
+        const drawY = p.y;
+
+        ctx.fillStyle = p.color || "rgba(255, 255, 255, 1)";
+        ctx.fillRect(drawX, drawY, 40, 40);
+    }
 }
 
 function gameLoop() {
@@ -72,4 +112,5 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
+connect();
 gameLoop();
