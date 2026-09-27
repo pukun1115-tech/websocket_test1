@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>connection test</title>
+</head>
+
+<body>
+    <script>
+        const socket = new WebSocket(`ws://${location.host}`);
+
+        //websocketハンドシェイクが成功したとき
+        //必ず必要ではない
+        socket.addEventListener("open", () => {
+            console.log("websocket接続に成功しました。");
+            //サーバーにテキストを送信する
+            socket.send("こんにちは。ブラウザです。._.");
+        });
+
+        socket.addEventListener("message", (event) => {
+            console.log("サーバーから受信:", event.data);
+        });
+        socket.addEventListener("error", (error) => {
+            console.log("websocketエラー:", error);
+        });
+        socket.addEventListener("close", () => {
+            console.log("websocket接続が終了しました。");
+        });
+    </script>
+</body>
+
+</html>
