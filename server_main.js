@@ -24,7 +24,7 @@ function sendText(socket, text) {
 
     if (payload.length >= 126) {
         console.error(`126バイト以上のデータは未対応です。\r\n${text}`);
-        return;
+        return undefined;
     }
 
     //実際に送信するフレーム
@@ -41,7 +41,7 @@ function sendText(socket, text) {
 }
 
 
-//ブラウザから届いたフレームをテキストにデコードする関数
+//ブラウザから届いた完全なwebsocketフレームをテキストにデコードする関数
 function decodeTextFrame(frame) {
     if (frame.length < 6) {
         console.log("フレームが短すぎます。");
@@ -56,16 +56,14 @@ function decodeTextFrame(frame) {
         return null;
     }
 
-    //secondByteの最上位ビットが1(マスクされている)か確認
     //マスクは暗号化ではなく、HTTP通信ではないということを示すため
-    const masked = ((secondByte & 0x80) !== 0);//0x80は2進数で10000000
+    const masked = ((secondByte & 0x80) !== 0);
     if (!masked) {
         console.log("ブラウザからのデータがマスクされていません。");
         return null;
     }
 
-    //0x7fは2進数で01111111
-    //マスクされているかどうかのビットを除外
+    //データサイズ126バイト以上未対応
     const payloadLength = secondByte & 0x7f;
     if (payloadLength >= 126) {
         console.log("126バイト以上のデータは未対応です。");
@@ -75,12 +73,11 @@ function decodeTextFrame(frame) {
     //4バイトのマスキングキーを取得する
     const maskingKey = frame.subarray(2, 6);
     //データの長さが126バイト未満だからデータの始まりは6
-    const payloadStartIndex = 6;
+    const payloadStartIndex = 2 + 4;
 
     //フレーム全体が届いているか
-    //後で変えないといけない。なぜなら一度に完全なフレームが届くとは限らないから
     if (frame.length < payloadStartIndex + payloadLength) {
-        console.log("データが不完全です。");
+        console.log("データが足りません。");
         return null;
     }
 
@@ -91,8 +88,6 @@ function decodeTextFrame(frame) {
     const decodedPayload = Buffer.alloc(payloadLength);
 
     //マスクを外すときはXOR演算をする
-    //a XOR b XOR b === aになる。
-    //XORは^でやる
     //maskingKey[i % 4] はそういう仕様
     for (let i = 0; i < payloadLength; i++) {
         decodedPayload[i] = maskedPayload[i] ^ maskingKey[i % 4];
@@ -102,6 +97,49 @@ function decodeTextFrame(frame) {
     return decodedPayload.toString("utf8");
 }
 
+//受信バッファから完全なwebsocketフレームを1つ取り出す
+//戻り値:
+//  { frame: buffer, rest: buffer } :{完全なフレーム,残りのフレーム}
+//  { frame: null }                 :まだデータが足りない
+//  null                            :不正なフレーム
+function extractFrame(buffer) {
+    if (buffer.length < 2) {
+        return { frame: null };
+    }
+
+    const firstByte = buffer[0];
+    const secondByte = buffer[1];
+
+    if (firstByte !== 0x81) {
+        console.log("テキストの最終フレームではありません。");
+        return null;
+    }
+
+    const masked = ((secondByte & 0x80) !== 0);
+    if (!masked) {
+        console.log("ブラウザからのデータがマスクされていません。");
+        return null;
+    }
+
+    const payloadLength = secondByte & 0x7f;
+    if (payloadLength >= 126) {
+        console.log("126バイト以上のデータは未対応です。");
+        return null;
+    }
+
+    const frameLength = 2 + 4 + payloadLength;
+
+    //データが足りない
+    if (buffer.length < frameLength) {
+        return { frame: null };
+    }
+
+    //抽出成功
+    return {
+        frame: buffer.subarray(0, frameLength),
+        rest: buffer.subarray(frameLength)
+    };
+}
 
 //http.createServer()の引数の関数はHTTPリクエスト(GETでindex.htmlの取得など)された時に毎回呼ばれる
 //http通信ができる
@@ -111,7 +149,7 @@ const server = http.createServer((request, response) => {
     if (!(request.method === "GET" && (request.url === "/" || request.url === "/index.html"))) {
         response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
         response.end("404 Not Found");
-        return;
+        return undefined;
     }
     const filePath = path.join(__dirname, "public", "index.html");
 
@@ -121,7 +159,7 @@ const server = http.createServer((request, response) => {
             //500はサーバー側のエラー
             response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
             response.end("index.htmlを読み込めませんでした。");
-            return;
+            return undefined;
         }
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         response.end(fileData);
@@ -137,7 +175,7 @@ server.on("upgrade", (request, socket, head) => {
     //WebSocket接続に必要なキーがないなら接続を切る
     if (!websocketKey) {
         socket.destroy();
-        return;
+        return undefined;
     }
 
     //websocket仕様で決められている文字列
@@ -158,30 +196,62 @@ server.on("upgrade", (request, socket, head) => {
     );
     //HTTPヘッダー形式のハンドシェイク-レスポンスを返す
     socket.write(response);
-
+    
     //サーバーのコンソールに出力
     console.log("websocket接続が成功しました。\r\n");
-
+    
     //ブラウザにテキストを送信する
     sendText(socket, "こんにちは。サーバーです。._.");
+    
+    let receiveBuffer = Buffer.alloc(0);
+
+    //1. 届いたデータをバッファに追加する
+    //2. バッファから完全なフレームを探す
+    //3. 完全なフレームをデコードする
+    //4. 受信したテキストに返事を送る
+    function processReceivedData(socket, data) {
+        receiveBuffer = Buffer.concat([receiveBuffer, data]);
+
+        while (receiveBuffer.length > 0) {
+            const result = extractFrame(receiveBuffer);
+
+            if (result && result.frame === null) {
+                return undefined;
+            }
+
+            if (result === null) {
+                console.log("不正なWebSocketフレームを受信しました。");
+                socket.destroy();
+                return undefined;
+            }
+
+            const { frame, rest } = result;
+            receiveBuffer = rest;
+
+            const text = decodeTextFrame(frame);
+
+            if (text === null) {
+                console.log("データのデコードに失敗しました。");
+                socket.destroy();
+                return undefined;
+            }
+
+            console.log("ブラウザから受信:", text, "\r\n");
+
+            sendText(socket, `メッセージを受け取りました:\"${text}\"`);
+        }
+    }
 
     //ブラウザからデータを受信したときの処理
-    //後で変えないといけない。なぜなら一度に完全なフレームが届くとは限らないから
     socket.on("data", (data) => {
         console.log("ブラウザからデータを受け取りました。");
+        processReceivedData(socket, data);
+    });
 
-        //ブラウザから届いたフレームをテキストにデコードする
-        const text = decodeTextFrame(data);
-        //デコードに失敗したとき(nullが返ってきたとき)
-        if (text === null) {
-            console.log("データのデコードに失敗しました。");
-            return;
-        }
-        //サーバーのコンソールに出力
-        console.log("ブラウザから受信:", text, "\r\n");
-
-        sendText(socket, `メッセージを受け取りました:\"${text}\"`);
-    })
+    //headにデータが入っている場合
+    if (head && head.length > 0) {
+        processReceivedData(socket, head);
+    }
 
     socket.on("end", () => {
         console.log("websocket接続が終了しました。");

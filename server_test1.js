@@ -102,47 +102,6 @@ function decodeTextFrame(frame) {
     return decodedPayload.toString("utf8");
 }
 
-//受信バッファから完全なwebsocketフレームを1つ取り出す
-//戻り値:
-//  { frame: buffer, rest: buffer } :{完全なフレーム,残りのフレーム}
-//  { frame: null }                 :まだデータが足りない
-//  null                            :不正なフレーム
-function extractFrame(buffer) {
-    if (buffer.length < 2) {
-        return { frame: null };
-    }
-
-    const firstByte = buffer[0];
-    const secondByte = buffer[1];
-
-    if (firstByte !== 0x81) {
-        console.log("テキストの最終フレームではありません。");
-        return null;
-    }
-
-    const masked = ((secondByte & 0x80) !== 0);
-    if (!masked) {
-        console.log("ブラウザからのデータがマスクされていません。");
-        return null;
-    }
-
-    const payloadLength = secondByte & 0x7f;
-    if (payloadLength >= 126) {
-        console.log("126バイト以上のデータは未対応です。");
-        return null;
-    }
-
-    const frameLength = 2 + 4 + payloadLength;
-
-    if (buffer.length < frameLength) {
-        return { frame: null };
-    }
-
-    return {
-        frame: buffer.subarray(0, frameLength),
-        rest: buffer.subarray(frameLength)
-    };
-}
 
 //http.createServer()の引数の関数はHTTPリクエスト(GETでindex.htmlの取得など)された時に毎回呼ばれる
 //http通信ができる
@@ -199,53 +158,29 @@ server.on("upgrade", (request, socket, head) => {
     );
     //HTTPヘッダー形式のハンドシェイク-レスポンスを返す
     socket.write(response);
-    
+
     //サーバーのコンソールに出力
     console.log("websocket接続が成功しました。\r\n");
-    
+
     //ブラウザにテキストを送信する
     sendText(socket, "こんにちは。サーバーです。._.");
-    
-    let receiveBuffer = Buffer.alloc(0);
-
-    function processReceivedData(socket, data) {
-        receiveBuffer = Buffer.concat([receiveBuffer, data]);
-
-        while (receiveBuffer.length > 0) {
-            const result = extractFrame(receiveBuffer);
-
-            if (result && result.frame === null) {
-                return;
-            }
-
-            if (result === null) {
-                console.log("不正なWebSocketフレームを受信しました。");
-                socket.destroy();
-                return;
-            }
-
-            const { frame, rest } = result;
-            receiveBuffer = rest;
-
-            const text = decodeTextFrame(frame);
-
-            if (text === null) {
-                console.log("データのデコードに失敗しました。");
-                socket.destroy();
-                return;
-            }
-
-            console.log("ブラウザから受信:", text, "\r\n");
-
-            sendText(socket, `メッセージを受け取りました:\"${text}\"`);
-        }
-    }
 
     //ブラウザからデータを受信したときの処理
     //後で変えないといけない。なぜなら一度に完全なフレームが届くとは限らないから
     socket.on("data", (data) => {
         console.log("ブラウザからデータを受け取りました。");
-        processReceivedData(socket, data);
+
+        //ブラウザから届いたフレームをテキストにデコードする
+        const text = decodeTextFrame(data);
+        //デコードに失敗したとき(nullが返ってきたとき)
+        if (text === null) {
+            console.log("データのデコードに失敗しました。");
+            return;
+        }
+        //サーバーのコンソールに出力
+        console.log("ブラウザから受信:", text, "\r\n");
+
+        sendText(socket, `メッセージを受け取りました:\"${text}\"`);
     })
 
     socket.on("end", () => {
