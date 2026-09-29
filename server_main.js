@@ -3,105 +3,86 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-//ブラウザにテキストを送信する関数
-//テキストを送信するとき1バイト目は0x81(=10000001)にする
-//送信するフレームの構造
-//1バイト目: 
-//          FIN(1bit, 最後のフレームなら1) +
-//          rsv1(1bit, 0にして問題はない) +
-//          rsv2(1bit) +
-//          rsv3(1bit) +
-//          opcode(4bit, データの種類, 0x1はテキスト)
-//
-//2バイト目:
-//          MASK(1bit, サーバーから送信するデータはマスクしないから0) +
-//          payload length(7bit)
-//
-//3バイト目以降:
-//          payload data(送信するデータ)
 function sendText(socket, text) {
     const payload = Buffer.from(text, "utf8");
-
-    if (payload.length >= 126) {
-        console.error(`126バイト以上のデータは未対応です。\r\n${text}`);
+    if (payload.length <= 125) {
+        const frame = Buffer.alloc(2 + payload.length);
+        frame[0] = 0x81;
+        frame[1] = payload.length;
+        payload.copy(frame, 2);
+        socket.write(frame);
         return undefined;
     }
 
-    //実際に送信するフレーム
-    const frame = Buffer.alloc(2 + payload.length);
+    if (payload.length <= 65535) {
+        const frame = Buffer.alloc(4 + payload.length);
+        frame[0] = 0x81;
+        frame[1] = 126;
+        frame.writeUInt16BE(payload.length, 2);
+        payload.copy(frame, 4);
+        socket.write(frame);
+        return undefined;
+    }
 
-    frame[0] = 0x81;
-    frame[1] = payload.length;
-
-    //payloadをフレームにコピーする(payloadの長さが126バイト未満だからこれでいい)
-    payload.copy(frame, 2);
-
-    //送信する
-    socket.write(frame);
+    console.error("65536バイト以上のデータには対応していません。");
 }
 
 
-//ブラウザから届いた完全なwebsocketフレームをテキストにデコードする関数
+function sendCloseFrame(socket, statusCode = 1000, reason = "") {
+    const reasonBuffer = Buffer.from(reason, "utf8");
+
+    if (reasonBuffer.length > 123) {
+        console.error("closeフレームのreasonが123バイトを超えています。");
+        return undefined;
+    }
+
+    const payload = Buffer.alloc(reasonBuffer.length + 2);
+
+    payload.writeUInt16BE(statusCode, 0);
+    reasonBuffer.copy(payload, 2);
+
+    const frame = Buffer.alloc(2 + payload.length);
+
+    frame[0] = 0x88;
+    frame[1] = payload.length;
+
+    payload.copy(frame, 2);
+    socket.write(frame);
+}
+
 function decodeTextFrame(frame) {
-    if (frame.length < 6) {
-        console.log("フレームが短すぎます。");
-        return null;
-    }
-
-    const firstByte = frame[0];
     const secondByte = frame[1];
+    const lengthCode = secondByte & 0x7f;
 
-    //テキストの,最終フレームか,確認(後で変えないといけない)
-    if (firstByte !== 0x81) {
+    let payloadLength = 0;
+    let payloadStartIndex = 0;
+
+    if (lengthCode < 126) {
+        payloadLength = lengthCode;
+        payloadStartIndex = 6;
+    } else if (lengthCode === 126) {
+        payloadLength = frame.readUInt16BE(2);
+        payloadStartIndex = 8;
+    } else {
         return null;
     }
 
-    //マスクは暗号化ではなく、HTTP通信ではないということを示すため
-    const masked = ((secondByte & 0x80) !== 0);
-    if (!masked) {
-        console.log("ブラウザからのデータがマスクされていません。");
-        return null;
-    }
-
-    //データサイズ126バイト以上未対応
-    const payloadLength = secondByte & 0x7f;
-    if (payloadLength >= 126) {
-        console.log("126バイト以上のデータは未対応です。");
-        return null;
-    }
-
-    //4バイトのマスキングキーを取得する
-    const maskingKey = frame.subarray(2, 6);
-    //データの長さが126バイト未満だからデータの始まりは6
-    const payloadStartIndex = 2 + 4;
-
-    //フレーム全体が届いているか
-    if (frame.length < payloadStartIndex + payloadLength) {
-        console.log("データが足りません。");
-        return null;
-    }
+    const maskingKeyStartIndex = payloadStartIndex - 4;
+    const maskingKey = frame.subarray(maskingKeyStartIndex, maskingKeyStartIndex + 4);
 
     //マスクされたデータを取得
     const maskedPayload = frame.subarray(payloadStartIndex, payloadStartIndex + payloadLength);
 
-    //デコードしたあとのデータをいれるバッファ
-    const decodedPayload = Buffer.alloc(payloadLength);
+    const decodedPayload = Buffer.alloc(payloadLength, 0);
 
     //マスクを外すときはXOR演算をする
-    //maskingKey[i % 4] はそういう仕様
     for (let i = 0; i < payloadLength; i++) {
         decodedPayload[i] = maskedPayload[i] ^ maskingKey[i % 4];
     }
 
-    //decodedPayload.toString("utf8")でutf8の文字列に変換
     return decodedPayload.toString("utf8");
 }
 
-//受信バッファから完全なwebsocketフレームを1つ取り出す
-//戻り値:
-//  { frame: buffer, rest: buffer } :{完全なフレーム,残りのフレーム}
-//  { frame: null }                 :まだデータが足りない
-//  null                            :不正なフレーム
 function extractFrame(buffer) {
     if (buffer.length < 2) {
         return { frame: null };
@@ -110,25 +91,41 @@ function extractFrame(buffer) {
     const firstByte = buffer[0];
     const secondByte = buffer[1];
 
-    if (firstByte !== 0x81) {
-        console.log("テキストの最終フレームではありません。");
+    const fin = ((firstByte & 0x80) !== 0);
+    const opcode = firstByte & 0x0f;
+    const masked = ((secondByte & 0x80) !== 0);
+    const lengthCode = secondByte & 0x7f;
+
+    if (!fin) {
+        console.log("分割フレームは未対応です。");
         return null;
     }
-
-    const masked = ((secondByte & 0x80) !== 0);
+    if (opcode !== 0x8 && opcode !== 0x1) {
+        console.log("テキストまたはcloseフレームではありません。");
+        return null;
+    }
     if (!masked) {
         console.log("ブラウザからのデータがマスクされていません。");
         return null;
     }
 
-    const payloadLength = secondByte & 0x7f;
-    if (payloadLength >= 126) {
-        console.log("126バイト以上のデータは未対応です。");
+    let lengthBytes = 0;
+
+    if (lengthCode === 126) {
+        lengthBytes = 2;
+    } else if (lengthCode === 127) {
+        console.log("65526バイト以上のデータには対応していません。");
         return null;
     }
 
-    const frameLength = 2 + 4 + payloadLength;
+    const headerLength = 2 + lengthBytes + 4;
 
+    if (buffer.length < headerLength) {
+        return { frame: null };
+    }
+
+    const payloadLength = (lengthCode < 126) ? lengthCode : buffer.readUInt16BE(2);
+    const frameLength = headerLength + payloadLength;
     //データが足りない
     if (buffer.length < frameLength) {
         return { frame: null };
@@ -139,6 +136,46 @@ function extractFrame(buffer) {
         frame: buffer.subarray(0, frameLength),
         rest: buffer.subarray(frameLength)
     };
+}
+
+function processReceivedData(socket, receiveBuffer, data) {
+    receiveBuffer = Buffer.concat([receiveBuffer, data]);
+
+    while (receiveBuffer.length > 0) {
+        const result = extractFrame(receiveBuffer);
+
+        if (result && result.frame === null) {
+            return undefined;
+        }
+
+        if (result === null) {
+            console.log("不正なWebSocketフレームを受信しました。");
+            socket.destroy();
+            return undefined;
+        }
+
+        const { frame, rest } = result;
+        receiveBuffer = rest;
+
+        const opcode = frame[0] & 0x0f;
+        if (opcode === 0x8) {
+            console.log("ブラウザからcloseフレームを受信しました。");
+            sendCloseFrame(socket, 1000, "正常終了");
+            socket.end();
+            return undefined;
+        }
+        if (opcode === 0x1) {
+            const text = decodeTextFrame(frame);
+
+            if (text === null) {
+                console.log("データのデコードに失敗しました。");
+                socket.destroy();
+                return undefined;
+            }
+            console.log("ブラウザから受信:", text, "\r\n");
+            sendText(socket, `メッセージを受け取りました:\"${text}\"`);
+        }
+    }
 }
 
 //http.createServer()の引数の関数はHTTPリクエスト(GETでindex.htmlの取得など)された時に毎回呼ばれる
@@ -166,13 +203,8 @@ const server = http.createServer((request, response) => {
     });
 });
 
-//引数の関数はブラウザからwebsocket接続の要求(あっぷぐれーどする)があったとき呼ばれる
 server.on("upgrade", (request, socket, head) => {
-    console.log("websocket接続を要求されました。");
-
-    //Node.jsがSec-WebSocket-Keyを全部小文字に自動でする
     const websocketKey = request.headers["sec-websocket-key"];
-    //WebSocket接続に必要なキーがないなら接続を切る
     if (!websocketKey) {
         socket.destroy();
         return undefined;
@@ -182,10 +214,10 @@ server.on("upgrade", (request, socket, head) => {
     const magicString = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     //ブラウザに返すためのSec-WebSocket-Acceptを求める
     const acceptKey = crypto
-    .createHash("sha1")
-    .update(websocketKey + magicString)
-    .digest("base64");
-    
+        .createHash("sha1")
+        .update(websocketKey + magicString)
+        .digest("base64");
+
     //「通信プロトコルを切り替えます」というレスポンス
     const response = (
         "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -194,63 +226,19 @@ server.on("upgrade", (request, socket, head) => {
         `Sec-WebSocket-Accept: ${acceptKey}\r\n` +
         "\r\n"
     );
-    //HTTPヘッダー形式のハンドシェイク-レスポンスを返す
     socket.write(response);
-    
-    //サーバーのコンソールに出力
-    console.log("websocket接続が成功しました。\r\n");
-    
-    //ブラウザにテキストを送信する
-    sendText(socket, "こんにちは。サーバーです。._.");
-    
+
     let receiveBuffer = Buffer.alloc(0);
-
-    //1. 届いたデータをバッファに追加する
-    //2. バッファから完全なフレームを探す
-    //3. 完全なフレームをデコードする
-    //4. 受信したテキストに返事を送る
-    function processReceivedData(socket, data) {
-        receiveBuffer = Buffer.concat([receiveBuffer, data]);
-
-        while (receiveBuffer.length > 0) {
-            const result = extractFrame(receiveBuffer);
-
-            if (result && result.frame === null) {
-                return undefined;
-            }
-
-            if (result === null) {
-                console.log("不正なWebSocketフレームを受信しました。");
-                socket.destroy();
-                return undefined;
-            }
-
-            const { frame, rest } = result;
-            receiveBuffer = rest;
-
-            const text = decodeTextFrame(frame);
-
-            if (text === null) {
-                console.log("データのデコードに失敗しました。");
-                socket.destroy();
-                return undefined;
-            }
-
-            console.log("ブラウザから受信:", text, "\r\n");
-
-            sendText(socket, `メッセージを受け取りました:\"${text}\"`);
-        }
-    }
 
     //ブラウザからデータを受信したときの処理
     socket.on("data", (data) => {
         console.log("ブラウザからデータを受け取りました。");
-        processReceivedData(socket, data);
+        processReceivedData(socket, receiveBuffer, data);
     });
 
     //headにデータが入っている場合
     if (head && head.length > 0) {
-        processReceivedData(socket, head);
+        processReceivedData(socket, receiveBuffer, head);
     }
 
     socket.on("end", () => {

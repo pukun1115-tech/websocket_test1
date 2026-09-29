@@ -8,11 +8,8 @@
 
 <body>
     <script>
-        const websocketProtocol = (location.protocol === "https:" ? "wss:" : "ws:");
+        const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
         const socket = new WebSocket(`${websocketProtocol}//${location.host}`);
-
-        //websocketハンドシェイクが成功したとき
-        //必ず必要ではない
         socket.addEventListener("open", () => {
             console.log("websocket接続に成功しました。");
             //サーバーにテキストを送信する
@@ -28,6 +25,13 @@
         socket.addEventListener("close", () => {
             console.log("websocket接続が終了しました。");
         });
+        window.addEventListener("beforeunload", () => {
+            socket.close();
+        });
+        function mainLoop() {
+            requestAnimationFrame(mainLoop);
+        }
+        mainLoop();
     </script>
 </body>
 
