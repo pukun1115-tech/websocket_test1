@@ -3,6 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+let sockets = [];
+let players = [];
+
 function sendText(socket, text) {
     const payload = Buffer.from(text, "utf8");
     if (payload.length <= 125) {
@@ -27,25 +30,18 @@ function sendText(socket, text) {
     console.error("65536バイト以上のデータには対応していません。");
 }
 
-
 function sendCloseFrame(socket, statusCode = 1000, reason = "") {
     const reasonBuffer = Buffer.from(reason, "utf8");
-
     if (reasonBuffer.length > 123) {
         console.error("closeフレームのreasonが123バイトを超えています。");
         return undefined;
     }
-
     const payload = Buffer.alloc(reasonBuffer.length + 2);
-
     payload.writeUInt16BE(statusCode, 0);
     reasonBuffer.copy(payload, 2);
-
     const frame = Buffer.alloc(2 + payload.length);
-
     frame[0] = 0x88;
     frame[1] = payload.length;
-
     payload.copy(frame, 2);
     socket.write(frame);
 }
@@ -53,10 +49,8 @@ function sendCloseFrame(socket, statusCode = 1000, reason = "") {
 function decodeTextFrame(frame) {
     const secondByte = frame[1];
     const lengthCode = secondByte & 0x7f;
-
-    let payloadLength = 0;
-    let payloadStartIndex = 0;
-
+    let payloadLength;
+    let payloadStartIndex;
     if (lengthCode < 126) {
         payloadLength = lengthCode;
         payloadStartIndex = 6;
@@ -66,20 +60,13 @@ function decodeTextFrame(frame) {
     } else {
         return null;
     }
-
     const maskingKeyStartIndex = payloadStartIndex - 4;
     const maskingKey = frame.subarray(maskingKeyStartIndex, maskingKeyStartIndex + 4);
-
-    //マスクされたデータを取得
     const maskedPayload = frame.subarray(payloadStartIndex, payloadStartIndex + payloadLength);
-
     const decodedPayload = Buffer.alloc(payloadLength, 0);
-
-    //マスクを外すときはXOR演算をする
     for (let i = 0; i < payloadLength; i++) {
         decodedPayload[i] = maskedPayload[i] ^ maskingKey[i % 4];
     }
-
     return decodedPayload.toString("utf8");
 }
 
@@ -87,7 +74,6 @@ function extractFrame(buffer) {
     if (buffer.length < 2) {
         return { frame: null };
     }
-
     const firstByte = buffer[0];
     const secondByte = buffer[1];
 
@@ -119,19 +105,11 @@ function extractFrame(buffer) {
     }
 
     const headerLength = 2 + lengthBytes + 4;
-
-    if (buffer.length < headerLength) {
-        return { frame: null };
-    }
-
     const payloadLength = (lengthCode < 126) ? lengthCode : buffer.readUInt16BE(2);
     const frameLength = headerLength + payloadLength;
-    //データが足りない
     if (buffer.length < frameLength) {
         return { frame: null };
     }
-
-    //抽出成功
     return {
         frame: buffer.subarray(0, frameLength),
         rest: buffer.subarray(frameLength)
@@ -172,28 +150,35 @@ function processReceivedData(socket, receiveBuffer, data) {
                 socket.destroy();
                 return undefined;
             }
-            console.log("ブラウザから受信:", text, "\r\n");
-            sendText(socket, `メッセージを受け取りました:\"${text}\"`);
+            try {
+                const obj = JSON.parse(text);
+                if (!obj.type) {
+                    socket.destroy();
+                    return undefined;
+                }
+                if (obj.type === "init") {
+                    //
+                } else if (obj.type === "move") {
+                    //
+                }
+            } catch (error) {
+                console.error("クライエントが変なものを送ってきました。");
+                socket.destroy();
+                return undefined;
+            }
         }
     }
 }
 
-//http.createServer()の引数の関数はHTTPリクエスト(GETでindex.htmlの取得など)された時に毎回呼ばれる
-//http通信ができる
 const server = http.createServer((request, response) => {
-    //index.htmlに全部書く
-    //安全だと思っている
     if (!(request.method === "GET" && (request.url === "/" || request.url === "/index.html"))) {
         response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
         response.end("404 Not Found");
         return undefined;
     }
     const filePath = path.join(__dirname, "public", "index.html");
-
-    //非同期でファイルを読み込む
     fs.readFile(filePath, (error, fileData) => {
         if (error) {
-            //500はサーバー側のエラー
             response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
             response.end("index.htmlを読み込めませんでした。");
             return undefined;
@@ -209,16 +194,11 @@ server.on("upgrade", (request, socket, head) => {
         socket.destroy();
         return undefined;
     }
-
-    //websocket仕様で決められている文字列
     const magicString = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    //ブラウザに返すためのSec-WebSocket-Acceptを求める
     const acceptKey = crypto
         .createHash("sha1")
         .update(websocketKey + magicString)
         .digest("base64");
-
-    //「通信プロトコルを切り替えます」というレスポンス
     const response = (
         "HTTP/1.1 101 Switching Protocols\r\n" +
         "Upgrade: websocket\r\n" +
@@ -229,14 +209,9 @@ server.on("upgrade", (request, socket, head) => {
     socket.write(response);
 
     let receiveBuffer = Buffer.alloc(0);
-
-    //ブラウザからデータを受信したときの処理
     socket.on("data", (data) => {
-        console.log("ブラウザからデータを受け取りました。");
         processReceivedData(socket, receiveBuffer, data);
     });
-
-    //headにデータが入っている場合
     if (head && head.length > 0) {
         processReceivedData(socket, receiveBuffer, head);
     }
