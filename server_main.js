@@ -99,6 +99,9 @@ function extractFrame(buffer) {
     }
 
     const headerLength = 2 + lengthBytes + 4;
+    if (buffer.length < headerLength) {
+        return { frame: null, rest: buffer };
+    }
     const payloadLength = (lengthCode < 126) ? lengthCode : buffer.readUInt16BE(2);
     const frameLength = headerLength + payloadLength;
     if (buffer.length < frameLength) {
