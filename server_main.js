@@ -3,8 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+/*
 let sockets = [];
 let players = [];
+*/
 
 function sendText(socket, text) {
     const payload = Buffer.from(text, "utf8");
@@ -150,6 +152,8 @@ function processReceivedData(socket, receiveBuffer, data) {
                 socket.destroy();
                 return undefined;
             }
+            console.log("受信:", text);
+            /*
             try {
                 const obj = JSON.parse(text);
                 if (!obj.type) {
@@ -166,6 +170,7 @@ function processReceivedData(socket, receiveBuffer, data) {
                 socket.destroy();
                 return undefined;
             }
+            */
         }
     }
 }
