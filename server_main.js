@@ -45,6 +45,14 @@ function sendCloseFrame(socket, statusCode = 1000, reason = "") {
     socket.write(frame);
 }
 
+function broadcast(message) {
+    const text = JSON.stringify(message);
+
+    for (const client of sockets) {
+        sendText(client, text);
+    }
+}
+
 function decodeTextFrame(frame) {
     const secondByte = frame[1];
     const lengthCode = secondByte & 0x7f;
