@@ -207,11 +207,17 @@ server.on("upgrade", (request, socket, head) => {
 
     let receiveBuffer = Buffer.alloc(0);
     socket.on("data", (data) => {
+        if (receiveBuffer === null) {
+            return undefined;
+        }
         receiveBuffer = Buffer.concat([receiveBuffer, data]);
         receiveBuffer = processReceivedData(socket, receiveBuffer);
     });
     if (head && head.length > 0) {
-        receiveBuffer = Buffer.concat([receiveBuffer, data]);
+        if (receiveBuffer === null) {
+            return undefined;
+        }
+        receiveBuffer = Buffer.concat([receiveBuffer, head]);
         receiveBuffer = processReceivedData(socket, receiveBuffer);
     }
 
