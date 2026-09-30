@@ -74,7 +74,7 @@ function decodeTextFrame(frame) {
 
 function extractFrame(buffer) {
     if (buffer.length < 2) {
-        return { frame: null };
+        return { frame: null, rest: buffer };
     }
     const firstByte = buffer[0];
     const secondByte = buffer[1];
@@ -84,16 +84,8 @@ function extractFrame(buffer) {
     const masked = ((secondByte & 0x80) !== 0);
     const lengthCode = secondByte & 0x7f;
 
-    if (!fin) {
-        console.log("分割フレームは未対応です。");
-        return null;
-    }
-    if (opcode !== 0x8 && opcode !== 0x1) {
-        console.log("テキストまたはcloseフレームではありません。");
-        return null;
-    }
-    if (!masked) {
-        console.log("ブラウザからのデータがマスクされていません。");
+    if (!fin || (opcode !== 0x8 && opcode !== 0x1) || !masked) {
+        console.log("不正なWebSocketフレームを受信しました。");
         return null;
     }
 
@@ -110,7 +102,7 @@ function extractFrame(buffer) {
     const payloadLength = (lengthCode < 126) ? lengthCode : buffer.readUInt16BE(2);
     const frameLength = headerLength + payloadLength;
     if (buffer.length < frameLength) {
-        return { frame: null };
+        return { frame: null, rest: buffer };
     }
     return {
         frame: buffer.subarray(0, frameLength),
@@ -118,31 +110,28 @@ function extractFrame(buffer) {
     };
 }
 
-function processReceivedData(socket, receiveBuffer, data) {
-    receiveBuffer = Buffer.concat([receiveBuffer, data]);
-
+//繰り返す
+//受信バッファからフレームを取り出して処理する
+function processReceivedData(socket, receiveBuffer) {
     while (receiveBuffer.length > 0) {
         const result = extractFrame(receiveBuffer);
-
-        if (result && result.frame === null) {
-            return undefined;
-        }
-
         if (result === null) {
-            console.log("不正なWebSocketフレームを受信しました。");
             socket.destroy();
-            return undefined;
+            return null;
         }
 
         const { frame, rest } = result;
         receiveBuffer = rest;
+        if (frame === null) {
+            return receiveBuffer;
+        }
 
         const opcode = frame[0] & 0x0f;
         if (opcode === 0x8) {
             console.log("ブラウザからcloseフレームを受信しました。");
             sendCloseFrame(socket, 1000, "正常終了");
             socket.end();
-            return undefined;
+            return null;
         }
         if (opcode === 0x1) {
             const text = decodeTextFrame(frame);
@@ -150,8 +139,10 @@ function processReceivedData(socket, receiveBuffer, data) {
             if (text === null) {
                 console.log("データのデコードに失敗しました。");
                 socket.destroy();
-                return undefined;
+                return null;
             }
+
+            //処理を書く
             console.log("受信:", text);
             /*
             try {
@@ -173,6 +164,7 @@ function processReceivedData(socket, receiveBuffer, data) {
             */
         }
     }
+    return receiveBuffer;
 }
 
 const server = http.createServer((request, response) => {
@@ -215,10 +207,12 @@ server.on("upgrade", (request, socket, head) => {
 
     let receiveBuffer = Buffer.alloc(0);
     socket.on("data", (data) => {
-        processReceivedData(socket, receiveBuffer, data);
+        receiveBuffer = Buffer.concat([receiveBuffer, data]);
+        receiveBuffer = processReceivedData(socket, receiveBuffer);
     });
     if (head && head.length > 0) {
-        processReceivedData(socket, receiveBuffer, head);
+        receiveBuffer = Buffer.concat([receiveBuffer, data]);
+        receiveBuffer = processReceivedData(socket, receiveBuffer);
     }
 
     socket.on("end", () => {
