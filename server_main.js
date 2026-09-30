@@ -3,10 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-/*
-let sockets = [];
-let players = [];
-*/
+const sockets = new Set();
 
 function sendText(socket, text) {
     const payload = Buffer.from(text, "utf8");
@@ -94,7 +91,7 @@ function extractFrame(buffer) {
     if (lengthCode === 126) {
         lengthBytes = 2;
     } else if (lengthCode === 127) {
-        console.log("65526バイト以上のデータには対応していません。");
+        console.log("65536バイト以上のデータには対応していません。");
         return null;
     }
 
@@ -146,7 +143,9 @@ function processReceivedData(socket, receiveBuffer) {
             }
 
             //処理を書く
-            console.log("受信:", text);
+            for (const client of sockets) {
+                sendText(client, text);
+            }
             /*
             try {
                 const obj = JSON.parse(text);
@@ -207,17 +206,27 @@ server.on("upgrade", (request, socket, head) => {
         "\r\n"
     );
     socket.write(response);
+    sockets.add(socket);
 
+    const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);
     socket.on("data", (data) => {
         if (receiveBuffer === null) {
             return undefined;
         }
         receiveBuffer = Buffer.concat([receiveBuffer, data]);
+        if (receiveBuffer.length > MAX_BUFFER_SIZE) {
+            socket.destroy();
+            return undefined;
+        }
         receiveBuffer = processReceivedData(socket, receiveBuffer);
     });
     if (head && head.length > 0) {
         if (receiveBuffer === null) {
+            return undefined;
+        }
+        if (receiveBuffer.length > MAX_BUFFER_SIZE) {
+            socket.destroy();
             return undefined;
         }
         receiveBuffer = Buffer.concat([receiveBuffer, head]);
@@ -226,14 +235,17 @@ server.on("upgrade", (request, socket, head) => {
 
     socket.on("end", () => {
         console.log("websocket接続が終了しました。");
+        sockets.delete(socket);
     });
 
     socket.on("close", () => {
         console.log("接続が閉じられました。");
+        sockets.delete(socket);
     });
 
     socket.on("error", (error) => {
         console.log("websocketエラー:", error.message);
+        sockets.delete(socket);
     });
 });
 
