@@ -225,11 +225,11 @@ server.on("upgrade", (request, socket, head) => {
         if (receiveBuffer === null) {
             return undefined;
         }
+        receiveBuffer = Buffer.concat([receiveBuffer, head]);
         if (receiveBuffer.length > MAX_BUFFER_SIZE) {
             socket.destroy();
             return undefined;
         }
-        receiveBuffer = Buffer.concat([receiveBuffer, head]);
         receiveBuffer = processReceivedData(socket, receiveBuffer);
     }
 
