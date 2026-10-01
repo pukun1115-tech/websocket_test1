@@ -51,6 +51,9 @@
                 } else if (data.type === "playerJoined") {
                     players.set(data.player.id, { x: data.player.x, y: data.player.y });
                     console.log(data.player.id + " joined");
+                } else if (data.type === "playerLeft") {
+                    players.delete(data.id);
+                    console.log(data.id + " left");
                 } else if (data.type == "playerMove") {
                     players.clear();
                     for (const p of data.players) {

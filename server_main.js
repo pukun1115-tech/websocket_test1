@@ -57,6 +57,17 @@ function broadcast(minna, socket, message) {
     }
 }
 
+function cleanupSocket(socket) {
+    sockets.delete(socket);
+    const playerId = playerIds.get(socket);
+    if (!playerId) {
+        return;
+    }
+    playerIds.delete(socket);
+    players.delete(playerId);
+    broadcast(false, socket, { type: "playerLeft", id: playerId });
+}
+
 function decodeTextFrame(frame) {
     const secondByte = frame[1];
     const lengthCode = secondByte & 0x7f;
@@ -260,17 +271,15 @@ server.on("upgrade", (request, socket, head) => {
 
     socket.on("end", () => {
         console.log("websocket接続が終了しました。");
-        sockets.delete(socket);
     });
 
     socket.on("close", () => {
         console.log("接続が閉じられました。");
-        sockets.delete(socket);
+        cleanupSocket(socket);
     });
 
     socket.on("error", (error) => {
         console.log("websocketエラー:", error.message);
-        sockets.delete(socket);
     });
 });
 
