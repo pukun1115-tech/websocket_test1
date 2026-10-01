@@ -4,31 +4,93 @@
 <head>
     <meta charset="UTF-8">
     <title>connection test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background-color: rgba(0, 0, 0, 1);
+        }
+    </style>
 </head>
 
 <body>
+    <canvas id="canvas"></canvas>
     <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
         const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
         const socket = new WebSocket(`${websocketProtocol}//${location.host}`);
-        socket.addEventListener("open", () => {
-            console.log("websocket接続に成功しました。");
-            //サーバーにテキストを送信する
-            socket.send("こんにちは。ブラウザです。._.");
-        });
-
-        socket.addEventListener("message", (event) => {
-            console.log("サーバーから受信:", event.data);
-        });
-        socket.addEventListener("error", (error) => {
-            console.log("websocketエラー:", error);
-        });
-        socket.addEventListener("close", () => {
-            console.log("websocket接続が終了しました。");
-        });
+        let players = new Map();
+        let playerId = null;
+        const keys = {};
+        window.addEventListener("keydown", (event) => {keys[event.code] = true;});
+        window.addEventListener("keyup", (event) => {keys[event.code] = false;});
+        const inputState = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
         window.addEventListener("beforeunload", () => {
             socket.close();
         });
+
+        socket.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "init") {
+                playerId = data.id;
+                for (const p of data.players) {
+                    players.set(p.id, {x: p.x, y: p.y});
+                }
+            } else if (data.type === "playerJoined") {
+                players.set(data.player.id, {x: data.player.x, y: data.player.y});
+                console.log(data.player.id + " joined");
+            } else if (data.type == "playerMove") {
+                players.clear();
+                for (const p of data.players) {
+                    players.set(p.id, {x: p.x, y: p.y});
+                }
+            }
+        });
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const centerX = Math.floor(canvas.width / 2);
+            const centerY = Math.floor(canvas.height / 2);
+            const you = players.get(playerId);
+            ctx.lineWidth = 2;
+            for (const p of players.keys()) {
+                if (p === playerId) {
+                    ctx.strokeStyle = "rgba(255, 0, 0, 1)";
+                } else {
+                    ctx.strokeStyle = "rgba(0, 0, 255, 1)";
+                }
+                ctx.strokeRect((players.get(p).x - you.x) + centerX - 16, (players.get(p).y - you.y) + centerY - 16, 32, 32);
+            }
+        }
+        function move() {
+            inputState.up = (keys["KeyW"] || keys["ArrowUp"]);
+            inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
+            inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
+            inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
+            if (inputState.up || inputState.down || inputState.left || inputState.right) {
+                socket.send(JSON.stringify({type: "move", input: inputState}));
+            }
+        }
         function mainLoop() {
+            draw();
+            move();
             requestAnimationFrame(mainLoop);
         }
         mainLoop();

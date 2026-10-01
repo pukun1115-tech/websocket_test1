@@ -4,6 +4,8 @@ const path = require("path");
 const crypto = require("crypto");
 
 const sockets = new Set();
+const players = new Map();
+const playerIds = new Map();
 
 function sendText(socket, text) {
     const payload = Buffer.from(text, "utf8");
@@ -45,11 +47,13 @@ function sendCloseFrame(socket, statusCode = 1000, reason = "") {
     socket.write(frame);
 }
 
-function broadcast(message) {
+function broadcast(minna, socket, message) {
     const text = JSON.stringify(message);
 
     for (const client of sockets) {
-        sendText(client, text);
+        if (minna || client !== socket) {
+            sendText(client, text);
+        }
     }
 }
 
@@ -151,27 +155,30 @@ function processReceivedData(socket, receiveBuffer) {
             }
 
             //処理を書く
-            for (const client of sockets) {
-                sendText(client, text);
-            }
-            /*
             try {
                 const obj = JSON.parse(text);
                 if (!obj.type) {
                     socket.destroy();
                     return undefined;
-                }
-                if (obj.type === "init") {
-                    //
                 } else if (obj.type === "move") {
-                    //
+                    console.log("moveを受信しました。");
+                    const playerId = playerIds.get(socket);
+                    const player = players.get(playerId);
+                    if (!player || !obj.input) {
+                        socket.destroy();
+                        return null;
+                    }
+                    const moveX = Number(obj.input.right === true) - Number(obj.input.left === true);
+                    const moveY = Number(obj.input.down === true) - Number(obj.input.up === true);
+                    player.x += moveX;
+                    player.y += moveY;
+                    broadcast(true, socket, {type: "playerMove", players: Array.from(players.values()).map((p) => ({id: p.id, x: p.x, y: p.y}))});
                 }
             } catch (error) {
                 console.error("クライエントが変なものを送ってきました。");
                 socket.destroy();
                 return undefined;
             }
-            */
         }
     }
     return receiveBuffer;
@@ -214,7 +221,18 @@ server.on("upgrade", (request, socket, head) => {
         "\r\n"
     );
     socket.write(response);
+
     sockets.add(socket);
+    const playerId = crypto.randomUUID();
+    players.set(playerId, {
+        socket: socket,
+        id: playerId,
+        x: 0,
+        y: 0
+    });
+    playerIds.set(socket, playerId);
+    sendText(socket, JSON.stringify({type: "init", id: playerId, players: Array.from(players.values()).map((p) => ({id: p.id, x: p.x, y: p.y}))}));
+    broadcast(false, socket, {type: "playerJoined", player: {id: playerId, x: 0, y: 0}});
 
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);
