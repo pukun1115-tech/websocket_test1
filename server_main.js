@@ -161,7 +161,6 @@ function processReceivedData(socket, receiveBuffer) {
                     socket.destroy();
                     return undefined;
                 } else if (obj.type === "move") {
-                    console.log("moveを受信しました。");
                     const playerId = playerIds.get(socket);
                     const player = players.get(playerId);
                     if (!player || !obj.input) {
@@ -172,7 +171,7 @@ function processReceivedData(socket, receiveBuffer) {
                     const moveY = Number(obj.input.down === true) - Number(obj.input.up === true);
                     player.x += moveX;
                     player.y += moveY;
-                    broadcast(true, socket, {type: "playerMove", players: Array.from(players.values()).map((p) => ({id: p.id, x: p.x, y: p.y}))});
+                    broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
                 }
             } catch (error) {
                 console.error("クライエントが変なものを送ってきました。");
@@ -231,8 +230,8 @@ server.on("upgrade", (request, socket, head) => {
         y: 0
     });
     playerIds.set(socket, playerId);
-    sendText(socket, JSON.stringify({type: "init", id: playerId, players: Array.from(players.values()).map((p) => ({id: p.id, x: p.x, y: p.y}))}));
-    broadcast(false, socket, {type: "playerJoined", player: {id: playerId, x: 0, y: 0}});
+    sendText(socket, JSON.stringify({ type: "init", id: playerId, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
+    broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 0, y: 0 } });
 
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);

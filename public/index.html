@@ -21,79 +21,90 @@
 <body>
     <canvas id="canvas"></canvas>
     <script>
-        const canvas = document.getElementById("canvas");
-        const ctx = canvas.getContext("2d");
-        const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
-        const socket = new WebSocket(`${websocketProtocol}//${location.host}`);
-        let players = new Map();
-        let playerId = null;
-        const keys = {};
-        window.addEventListener("keydown", (event) => {keys[event.code] = true;});
-        window.addEventListener("keyup", (event) => {keys[event.code] = false;});
-        const inputState = {
-            up: false,
-            down: false,
-            left: false,
-            right: false
-        };
-        window.addEventListener("beforeunload", () => {
-            socket.close();
-        });
+        (() => {
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
+            const socket = new WebSocket(`${websocketProtocol}//${location.host}`);
+            let players = new Map();
+            let playerId = null;
+            const keys = {};
+            window.addEventListener("keydown", (event) => { keys[event.code] = true; });
+            window.addEventListener("keyup", (event) => { keys[event.code] = false; });
+            const inputState = {
+                up: false,
+                down: false,
+                left: false,
+                right: false
+            };
+            window.addEventListener("beforeunload", () => {
+                socket.close();
+            });
 
-        socket.addEventListener("message", (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === "init") {
-                playerId = data.id;
-                for (const p of data.players) {
-                    players.set(p.id, {x: p.x, y: p.y});
+            socket.addEventListener("message", (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === "init") {
+                    playerId = data.id;
+                    for (const p of data.players) {
+                        players.set(p.id, { x: p.x, y: p.y });
+                    }
+                } else if (data.type === "playerJoined") {
+                    players.set(data.player.id, { x: data.player.x, y: data.player.y });
+                    console.log(data.player.id + " joined");
+                } else if (data.type == "playerMove") {
+                    players.clear();
+                    for (const p of data.players) {
+                        players.set(p.id, { x: p.x, y: p.y });
+                    }
                 }
-            } else if (data.type === "playerJoined") {
-                players.set(data.player.id, {x: data.player.x, y: data.player.y});
-                console.log(data.player.id + " joined");
-            } else if (data.type == "playerMove") {
-                players.clear();
-                for (const p of data.players) {
-                    players.set(p.id, {x: p.x, y: p.y});
-                }
-            }
-        });
+            });
+            socket.addEventListener("close", () => {
+                console.log("Disconnected from server");
+            });
+            socket.addEventListener("error", (error) => {
+                console.error("WebSocket error:", error);
+            });
+            socket.addEventListener("open", () => {
+                console.log("Connected to server");
+            });
 
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener("resize", resizeCanvas);
-        resizeCanvas();
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const centerX = Math.floor(canvas.width / 2);
-            const centerY = Math.floor(canvas.height / 2);
-            const you = players.get(playerId);
-            ctx.lineWidth = 2;
-            for (const p of players.keys()) {
-                if (p === playerId) {
-                    ctx.strokeStyle = "rgba(255, 0, 0, 1)";
-                } else {
-                    ctx.strokeStyle = "rgba(0, 0, 255, 1)";
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            window.addEventListener("resize", resizeCanvas);
+            resizeCanvas();
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const centerX = Math.floor(canvas.width / 2);
+                const centerY = Math.floor(canvas.height / 2);
+                const you = players.get(playerId);
+                ctx.lineWidth = 2;
+                for (const p of players.keys()) {
+                    if (p === playerId) {
+                        ctx.strokeStyle = "rgba(255, 0, 0, 1)";
+                    } else {
+                        ctx.strokeStyle = "rgba(0, 0, 255, 1)";
+                    }
+                    ctx.strokeRect((players.get(p).x - you.x) + centerX - 16, (players.get(p).y - you.y) + centerY - 16, 32, 32);
                 }
-                ctx.strokeRect((players.get(p).x - you.x) + centerX - 16, (players.get(p).y - you.y) + centerY - 16, 32, 32);
             }
-        }
-        function move() {
-            inputState.up = (keys["KeyW"] || keys["ArrowUp"]);
-            inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
-            inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
-            inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
-            if (inputState.up || inputState.down || inputState.left || inputState.right) {
-                socket.send(JSON.stringify({type: "move", input: inputState}));
+            function move() {
+                inputState.up = (keys["KeyW"] || keys["ArrowUp"]);
+                inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
+                inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
+                inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
+                if (inputState.up || inputState.down || inputState.left || inputState.right) {
+                    socket.send(JSON.stringify({ type: "move", input: inputState }));
+                }
             }
-        }
-        function mainLoop() {
-            draw();
-            move();
-            requestAnimationFrame(mainLoop);
-        }
-        mainLoop();
+            function mainLoop() {
+                draw();
+                move();
+                requestAnimationFrame(mainLoop);
+            }
+            mainLoop();
+        })();
     </script>
 </body>
 
