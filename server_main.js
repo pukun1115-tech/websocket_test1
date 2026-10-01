@@ -7,7 +7,42 @@ const sockets = new Set();
 const players = new Map();
 const playerIds = new Map();
 
-function sendText(socket, text) {
+const map = [
+    "####################",
+    "#..#...............#",
+    "##.#.####..........#",
+    "#..#.#.............#",
+    "#.#..#.............#",
+    "#...#..............#",
+    "#.##...............#",
+    "#...#..............#",
+    "#.#................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "####################",
+];
+
+function checkPlayerCollision(nx, ny) {
+    for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < map[y].length; x++) {
+            if (map[y][x] !== "#") continue;
+            if (nx < x + 1 && nx + 0.5 > x && ny < y + 1 && ny + 0.5 > y) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function sendTextFrame(socket, text) {
     const payload = Buffer.from(text, "utf8");
     if (payload.length <= 125) {
         const frame = Buffer.alloc(2 + payload.length);
@@ -47,12 +82,12 @@ function sendCloseFrame(socket, statusCode = 1000, reason = "") {
     socket.write(frame);
 }
 
-function broadcast(minna, socket, message) {
+function broadcast(all, socket, message) {
     const text = JSON.stringify(message);
 
     for (const client of sockets) {
-        if (minna || client !== socket) {
-            sendText(client, text);
+        if (all || client !== socket) {
+            sendTextFrame(client, text);
         }
     }
 }
@@ -172,7 +207,7 @@ function processReceivedData(socket, receiveBuffer) {
                     socket.destroy();
                     return undefined;
                 } else if (obj.type === "move") {
-                    const moveSpeed = 0.2;
+                    const moveSpeed = 0.1;
                     const playerId = playerIds.get(socket);
                     const player = players.get(playerId);
                     if (!player || !obj.input) {
@@ -181,9 +216,20 @@ function processReceivedData(socket, receiveBuffer) {
                     }
                     const moveX = Number(obj.input.right === true) - Number(obj.input.left === true);
                     const moveY = Number(obj.input.down === true) - Number(obj.input.up === true);
-                    player.x += moveX * moveSpeed * obj.interval;
-                    player.y += moveY * moveSpeed * obj.interval;
-                    broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
+                    const moveLength = Math.hypot(moveX, moveY);
+                    if (moveLength > 0) {
+                        const normalizedMoveX = moveX / moveLength;
+                        const normalizedMoveY = moveY / moveLength;
+                        const nextX = player.x + normalizedMoveX * moveSpeed;
+                        const nextY = player.y + normalizedMoveY * moveSpeed;
+                        if (!checkPlayerCollision(nextX, player.y)) {
+                            player.x = nextX;
+                        }
+                        if (!checkPlayerCollision(player.x, nextY)) {
+                            player.y = nextY;
+                        }
+                        broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
+                    }
                 }
             } catch (error) {
                 console.error("クライエントが変なものを送ってきました。");
@@ -233,17 +279,18 @@ server.on("upgrade", (request, socket, head) => {
     );
     socket.write(response);
 
+    //socketをsocketsに追加
     sockets.add(socket);
     const playerId = crypto.randomUUID();
     players.set(playerId, {
         socket: socket,
         id: playerId,
-        x: 0,
-        y: 0
+        x: 1.25,
+        y: 1.25
     });
     playerIds.set(socket, playerId);
-    sendText(socket, JSON.stringify({ type: "init", id: playerId, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
-    broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 0, y: 0 } });
+    sendTextFrame(socket, JSON.stringify({ type: "init", id: playerId, map: map, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
+    broadcast(false, socket, { type: "playerJoined", player: players.get(playerIds.get(socket)) });
 
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);

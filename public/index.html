@@ -22,6 +22,7 @@
     <canvas id="canvas"></canvas>
     <script>
         (() => {
+            let map = [];
             const canvas = document.getElementById("canvas");
             const ctx = canvas.getContext("2d");
             const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
@@ -45,6 +46,7 @@
                 const data = JSON.parse(event.data);
                 if (data.type === "init") {
                     playerId = data.id;
+                    map = data.map;
                     for (const p of data.players) {
                         players.set(p.id, { x: p.x, y: p.y });
                     }
@@ -82,6 +84,9 @@
                 const centerX = Math.floor(canvas.width / 2);
                 const centerY = Math.floor(canvas.height / 2);
                 const you = players.get(playerId);
+                if (!you) {
+                    return;
+                }
                 ctx.lineWidth = 2;
                 for (const p of players.keys()) {
                     if (p === playerId) {
@@ -89,7 +94,14 @@
                     } else {
                         ctx.strokeStyle = "rgba(0, 0, 255, 1)";
                     }
-                    ctx.strokeRect((players.get(p).x - you.x) + centerX - 16, (players.get(p).y - you.y) + centerY - 16, 32, 32);
+                    ctx.strokeRect(Math.floor((players.get(p).x - you.x) * 32) + centerX, Math.floor((players.get(p).y - you.y) * 32) + centerY, 16, 16);
+                }
+                for (let y = 0; y < map.length; y++) {
+                    for (let x = 0; x < map[y].length; x++) {
+                        if (map[y][x] === ".") continue;
+                        ctx.strokeStyle = "rgba(255, 255, 255, 1)";
+                        ctx.strokeRect(Math.floor((x - you.x) * 32) + centerX, Math.floor((y - you.y) * 32) + centerY, 32, 32);
+                    }
                 }
             }
             function move() {
@@ -100,13 +112,14 @@
             }
             function sendMove() {
                 if (socket.readyState === WebSocket.OPEN && (inputState.up || inputState.down || inputState.left || inputState.right)) {
-                    socket.send(JSON.stringify({ type: "move", input: inputState, interval: 10 }));
+                    socket.send(JSON.stringify({ type: "move", input: inputState }));
                 }
             }
-            setInterval(sendMove, 10);
+            //setInterval(sendMove, 10);
             function mainLoop() {
                 draw();
                 move();
+                sendMove();
                 requestAnimationFrame(mainLoop);
             }
             mainLoop();
