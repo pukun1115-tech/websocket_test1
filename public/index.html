@@ -100,10 +100,10 @@
             }
             function sendMove() {
                 if (socket.readyState === WebSocket.OPEN && (inputState.up || inputState.down || inputState.left || inputState.right)) {
-                    socket.send(JSON.stringify({ type: "move", input: inputState, interval: 40 }));
+                    socket.send(JSON.stringify({ type: "move", input: inputState, interval: 10 }));
                 }
             }
-            setInterval(sendMove, 40);
+            setInterval(sendMove, 10);
             function mainLoop() {
                 draw();
                 move();

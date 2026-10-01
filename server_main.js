@@ -172,7 +172,7 @@ function processReceivedData(socket, receiveBuffer) {
                     socket.destroy();
                     return undefined;
                 } else if (obj.type === "move") {
-                    const moveSpeed = 1;
+                    const moveSpeed = 0.2;
                     const playerId = playerIds.get(socket);
                     const player = players.get(playerId);
                     if (!player || !obj.input) {
