@@ -172,6 +172,7 @@ function processReceivedData(socket, receiveBuffer) {
                     socket.destroy();
                     return undefined;
                 } else if (obj.type === "move") {
+                    const moveSpeed = 1;
                     const playerId = playerIds.get(socket);
                     const player = players.get(playerId);
                     if (!player || !obj.input) {
@@ -180,8 +181,8 @@ function processReceivedData(socket, receiveBuffer) {
                     }
                     const moveX = Number(obj.input.right === true) - Number(obj.input.left === true);
                     const moveY = Number(obj.input.down === true) - Number(obj.input.up === true);
-                    player.x += moveX;
-                    player.y += moveY;
+                    player.x += moveX * moveSpeed * obj.interval;
+                    player.y += moveY * moveSpeed * obj.interval;
                     broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
                 }
             } catch (error) {

@@ -97,10 +97,13 @@
                 inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
                 inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
                 inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
-                if (inputState.up || inputState.down || inputState.left || inputState.right) {
-                    socket.send(JSON.stringify({ type: "move", input: inputState }));
+            }
+            function sendMove() {
+                if (socket.readyState === WebSocket.OPEN && (inputState.up || inputState.down || inputState.left || inputState.right)) {
+                    socket.send(JSON.stringify({ type: "move", input: inputState, interval: 40 }));
                 }
             }
+            setInterval(sendMove, 40);
             function mainLoop() {
                 draw();
                 move();
