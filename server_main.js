@@ -101,6 +101,7 @@ function cleanupSocket(socket) {
     playerIds.delete(socket);
     players.delete(playerId);
     broadcast(false, socket, { type: "playerLeft", id: playerId });
+    console.log(playerId + " left the game");
 }
 
 function decodeTextFrame(frame) {
@@ -300,7 +301,8 @@ server.on("upgrade", (request, socket, head) => {
     playerIds.set(socket, playerId);
     sendTextFrame(socket, JSON.stringify({ type: "init", id: playerId, map: map, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
     broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 1.25, y: 1.25 } });
-
+    console.log(playerId + " joined the game");
+    
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);
     socket.on("data", (data) => {
