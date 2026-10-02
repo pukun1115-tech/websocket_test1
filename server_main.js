@@ -9,24 +9,24 @@ const playerIds = new Map();
 
 const map = [
     "####################",
-    "#..#...............#",
+    "#S.#...............#",
     "##.#.####..........#",
     "#..#.#.............#",
     "#.#..#.............#",
     "#...#..............#",
-    "#.##...............#",
-    "#...#..............#",
-    "#.#................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
-    "#..................#",
+    "#.###.###..........#",
+    "#.###...#..........#",
+    "#.#####.#..........#",
+    "#.#...#.#..........#",
+    "#.#.#.#.#..........#",
+    "#.#.#.#.#..........#",
+    "#.#.#.#.#..........#",
+    "#.#.#.#.#..........#",
+    "#.#.#.#..#.........#",
+    "#.#.#..#.#.........#",
+    "#.#..#...#.........#",
+    "#.##.#####.........#",
+    "#....#............G#",
     "####################",
 ];
 
@@ -220,13 +220,15 @@ function processReceivedData(socket, receiveBuffer) {
                     if (moveLength > 0) {
                         const normalizedMoveX = moveX / moveLength;
                         const normalizedMoveY = moveY / moveLength;
-                        const nextX = player.x + normalizedMoveX * moveSpeed;
-                        const nextY = player.y + normalizedMoveY * moveSpeed;
-                        if (!checkPlayerCollision(nextX, player.y)) {
-                            player.x = nextX;
-                        }
-                        if (!checkPlayerCollision(player.x, nextY)) {
-                            player.y = nextY;
+                        for (let i = 0; i < 5; i++) {
+                            const nextX = player.x + (normalizedMoveX * moveSpeed) / 5;
+                            const nextY = player.y + (normalizedMoveY * moveSpeed) / 5;
+                            if (!checkPlayerCollision(nextX, player.y)) {
+                                player.x = nextX;
+                            }
+                            if (!checkPlayerCollision(player.x, nextY)) {
+                                player.y = nextY;
+                            }
                         }
                         broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
                     }

@@ -88,6 +88,18 @@
                     return;
                 }
                 ctx.lineWidth = 2;
+                for (let y = 0; y < map.length; y++) {
+                    for (let x = 0; x < map[y].length; x++) {
+                        if (map[y][x] === ".") {
+                            ctx.fillStyle = "rgba(0, 0, 0, 1)";
+                        } else if (map[y][x] === "#") {
+                            ctx.fillStyle = "rgba(255, 255, 255, 1)";
+                        } else {
+                            ctx.fillStyle = "rgba(0, 120, 120, 1)";
+                        }
+                        ctx.fillRect(Math.floor((x - you.x) * 32) + centerX, Math.floor((y - you.y) * 32) + centerY, 32, 32);
+                    }
+                }
                 for (const p of players.keys()) {
                     if (p === playerId) {
                         ctx.strokeStyle = "rgba(255, 0, 0, 1)";
@@ -95,13 +107,6 @@
                         ctx.strokeStyle = "rgba(0, 0, 255, 1)";
                     }
                     ctx.strokeRect(Math.floor((players.get(p).x - you.x) * 32) + centerX, Math.floor((players.get(p).y - you.y) * 32) + centerY, 16, 16);
-                }
-                for (let y = 0; y < map.length; y++) {
-                    for (let x = 0; x < map[y].length; x++) {
-                        if (map[y][x] === ".") continue;
-                        ctx.strokeStyle = "rgba(255, 255, 255, 1)";
-                        ctx.strokeRect(Math.floor((x - you.x) * 32) + centerX, Math.floor((y - you.y) * 32) + centerY, 32, 32);
-                    }
                 }
             }
             function move() {
