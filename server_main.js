@@ -96,7 +96,7 @@ function cleanupSocket(socket) {
     sockets.delete(socket);
     const playerId = playerIds.get(socket);
     if (!playerId) {
-        return;
+        return undefined;
     }
     playerIds.delete(socket);
     players.delete(playerId);
@@ -299,7 +299,7 @@ server.on("upgrade", (request, socket, head) => {
     });
     playerIds.set(socket, playerId);
     sendTextFrame(socket, JSON.stringify({ type: "init", id: playerId, map: map, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
-    broadcast(false, socket, { type: "playerJoined", player: players.get(playerIds.get(socket)) });
+    broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 1.25, y: 1.25 } });
 
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);
@@ -328,6 +328,7 @@ server.on("upgrade", (request, socket, head) => {
 
     socket.on("end", () => {
         console.log("websocket接続が終了しました。");
+        cleanupSocket(socket);
     });
 
     socket.on("close", () => {
@@ -337,6 +338,7 @@ server.on("upgrade", (request, socket, head) => {
 
     socket.on("error", (error) => {
         console.log("websocketエラー:", error.message);
+        cleanupSocket(socket);
     });
 });
 
