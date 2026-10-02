@@ -131,31 +131,39 @@
             });
 
             socket.addEventListener("message", (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === "init") {
-                    playerId = data.id;
-                    map = data.map;
-                    for (const p of data.players) {
-                        players.set(p.id, { x: p.x, y: p.y });
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === "init") {
+                        playerId = data.id;
+                        map = data.map;
+                        for (const p of data.players) {
+                            players.set(p.id, { x: p.x, y: p.y });
+                        }
+                    } else if (data.type === "playerJoined") {
+                        players.set(data.player.id, { x: data.player.x, y: data.player.y });
+                        addMessage(data.player.id + " joined the game");
+                    } else if (data.type === "playerLeft") {
+                        players.delete(data.id);
+                        addMessage(data.id + " left the game");
+                    } else if (data.type == "playerMove") {
+                        players.clear();
+                        for (const p of data.players) {
+                            players.set(p.id, { x: p.x, y: p.y });
+                        }
+                    } else if (data.type === "chat") {
+                        addMessage(data.message);
                     }
-                } else if (data.type === "playerJoined") {
-                    players.set(data.player.id, { x: data.player.x, y: data.player.y });
-                    addMessage(data.player.id + " joined the game");
-                } else if (data.type === "playerLeft") {
-                    players.delete(data.id);
-                    addMessage(data.id + " left the game");
-                } else if (data.type == "playerMove") {
-                    players.clear();
-                    for (const p of data.players) {
-                        players.set(p.id, { x: p.x, y: p.y });
-                    }
-                } else if (data.type === "chat") {
-                    addMessage(data.message);
+                } catch (error) {
+                    console.log("受信エラー");
+                    console.log(error);
                 }
             });
             socket.addEventListener("close", (event) => {
                 addMessage("Disconnected from server");
-                addMessage("Code: ", event.code);
+                addMessage("Code: " + event.code);
+                if (event.reason && event.reason !== "") {
+                    addMessage("Reason: " + event.reason);
+                }
             });
             socket.addEventListener("error", (event) => {
                 console.log("WebSocketエラー: ", event);
