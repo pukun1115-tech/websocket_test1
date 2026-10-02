@@ -5,9 +5,10 @@
     <meta charset="UTF-8">
     <title>connection test</title>
     <style>
-        body {
+        * {
             margin: 0;
             padding: 0;
+            touch-action: none;
             overflow: hidden;
         }
 
@@ -18,6 +19,8 @@
         }
 
         .chat {
+            overflow: auto;
+            touch-action: auto !important;
             z-index: 2;
             position: fixed;
             left: 10px;
