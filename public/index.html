@@ -153,11 +153,13 @@
                     addMessage(data.message);
                 }
             });
-            socket.addEventListener("close", () => {
+            socket.addEventListener("close", (event) => {
                 addMessage("Disconnected from server");
+                addMessage("Code: ", event.code);
             });
-            socket.addEventListener("error", (error) => {
-                addMessage("WebSocket error: " + error.message);
+            socket.addEventListener("error", (event) => {
+                console.log("WebSocketエラー: ", event);
+                addMessage("WebSocket error occurred");
             });
             socket.addEventListener("open", () => {
                 addMessage("Connected to server");
