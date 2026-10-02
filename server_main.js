@@ -9,7 +9,7 @@ const playerIds = new Map();
 
 const map = [
     "####################",
-    "#S.#...............#",
+    "#..#...............#",
     "##.#.####..........#",
     "#..#.#.............#",
     "#.#..#.............#",
@@ -26,7 +26,7 @@ const map = [
     "#.#.#..#.#.........#",
     "#.#..#...#.........#",
     "#.##.#####.........#",
-    "#....#............G#",
+    "#....#.............#",
     "####################",
 ];
 
@@ -232,6 +232,8 @@ function processReceivedData(socket, receiveBuffer) {
                         }
                         broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
                     }
+                } else if (obj.type === "chat") {
+                    broadcast(true, socket, { type: "chat", message: `${playerIds.get(socket)}: ${obj.message}` });
                 }
             } catch (error) {
                 console.error("クライエントが変なものを送ってきました。");
@@ -283,7 +285,12 @@ server.on("upgrade", (request, socket, head) => {
 
     //socketをsocketsに追加
     sockets.add(socket);
-    const playerId = crypto.randomUUID();
+    function createPlayerId() {
+        const f = Math.random().toString(36).substring(2, 2 + 6);
+        return f.charAt(0).toUpperCase() + f.slice(1);
+    }
+    const playerId = createPlayerId();
+
     players.set(playerId, {
         socket: socket,
         id: playerId,
