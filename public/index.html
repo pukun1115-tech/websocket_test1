@@ -177,7 +177,7 @@
                     } else if (data.type === "chat") {
                         addMessage(data.message);
                     } else if (data.type === "paint") {
-                        map = data.map;
+                        map[data.paintedY] = data.str;
                     }
                 } catch (error) {
                     console.log("受信エラー");
@@ -185,7 +185,7 @@
                 }
             });
             socket.addEventListener("close", (event) => {
-                addMessage("Disconnected from server");
+                addMessage("Disconnected from the server");
                 addMessage("Code: " + event.code);
                 if (event.reason && event.reason !== "") {
                     addMessage("Reason: " + event.reason);
@@ -193,10 +193,10 @@
             });
             socket.addEventListener("error", (event) => {
                 console.log("WebSocketエラー: ", event);
-                addMessage("WebSocket error occurred");
+                addMessage("an error occurred in the WebSocket connection");
             });
             socket.addEventListener("open", () => {
-                addMessage("Connected to server");
+                addMessage("Connected to the server");
             });
 
             function resizeCanvas() {
@@ -222,13 +222,13 @@
                         if (map[y][x] === ".") {
                             ctx.fillStyle = "rgba(0, 0, 0, 1)";
                         } else if (map[y][x] === "#") {
-                            ctx.fillStyle = "rgba(255, 255, 255, 1)";
+                            ctx.fillStyle = "rgba(127, 127, 127, 1)";
                         } else if (map[y][x] === "R") {
-                            ctx.fillStyle = "rgba(255, 0, 0, 1)";
+                            ctx.fillStyle = "rgba(127, 0, 0, 1)";
                         } else if (map[y][x] === "G") {
-                            ctx.fillStyle = "rgba(0, 255, 0, 1)";
+                            ctx.fillStyle = "rgba(0, 127, 0, 1)";
                         } else if (map[y][x] === "B") {
-                            ctx.fillStyle = "rgba(0, 0, 255, 1)";
+                            ctx.fillStyle = "rgba(0, 0, 127, 1)";
                         }
                         ctx.fillRect((x - you.x) * 32 + centerX - 1, (y - you.y) * 32 + centerY - 1, 32 + 1, 32 + 1);
                     }
@@ -249,7 +249,7 @@
                     inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
                     inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
                     inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
-                    inputState.isPainting = (keys["ShiftLeft"] || keys["Space"]);
+                    inputState.isPainting = (keys["ShiftLeft"] || keys["ShiftRight"] || keys["Space"]);
                 }
             }
             function sendMove() {
