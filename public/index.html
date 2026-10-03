@@ -11,6 +11,14 @@
             touch-action: manipulation;
         }
 
+        #game {
+            position: fixed;
+            top: 0px;
+            left: 0px;
+            width: 100%;
+            height: 100%;
+        }
+
         #canvas {
             position: fixed;
             top: 0px;
@@ -34,11 +42,13 @@
             align-items: center;
         }
 
-        #messages, #messageInput, #sendButton {
+        #messages,
+        #messageInput,
+        #sendButton {
             border: 1px solid rgba(127, 127, 127, 1);
             border-radius: 2px;
         }
-        
+
         #messages {
             box-sizing: border-box;
             height: 150px;
@@ -48,6 +58,8 @@
             overflow-x: hidden;
             overflow-wrap: anywhere;
             word-break: normal;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(127, 127, 127, 1) rgba(0, 0, 0, 0);
         }
 
         #messageInput {
@@ -70,27 +82,55 @@
 </head>
 
 <body>
-    <div class="chat">
-        <div id="messages"></div>
-        <div class="chat-form">
-            <input type="text" id="messageInput" placeholder="メッセージを入力" maxlength="100">
-            <button id="sendButton" type="button">送信</button>
+    <div id="game">
+        <div class="chat">
+            <div id="messages"></div>
+            <div class="chat-form">
+                <input type="text" id="messageInput" placeholder="メッセージを入力" maxlength="100">
+                <button id="sendButton" type="button">送信</button>
+            </div>
         </div>
+        <canvas id="canvas"></canvas>
     </div>
-    <canvas id="canvas"></canvas>
     <script>
         (() => {
             const canvas = document.getElementById("canvas");
             const ctx = canvas.getContext("2d");
             const websocketProtocol = ((location.protocol === "https:") ? "wss:" : "ws:");
             const socket = new WebSocket(`${websocketProtocol}//${location.host}`);
-            let players = new Map();
-            let playerId = null;
-            const keys = {};
-            let map = [];
+
             const messageInput = document.getElementById("messageInput");
             const sendButton = document.getElementById("sendButton");
             const messages = document.getElementById("messages");
+            function addMessage(message) {
+                const messageElement = document.createElement("div");
+                messageElement.textContent = message;
+                messages.appendChild(messageElement);
+                messages.scrollTop = messages.scrollHeight;
+            }
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (message !== "" && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ type: "chat", message: message }));
+                    messageInput.value = "";
+                }
+            }
+            sendButton.addEventListener("click", sendMessage);
+
+
+            const inputState = {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+                isPainting: false,
+            };
+            const keys = {};
+            messageInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    sendMessage();
+                }
+            });
             window.addEventListener("keydown", (event) => {
                 keys[event.code] = true;
                 if (event.key === "Enter" && !event.isComposing) {
@@ -107,31 +147,9 @@
                 keys[event.code] = false;
             });
 
-            function addMessage(message) {
-                const messageElement = document.createElement("div");
-                messageElement.textContent = message;
-                messages.appendChild(messageElement);
-                messages.scrollTop = messages.scrollHeight;
-            }
-            function sendMessage() {
-                const message = messageInput.value.trim();
-                if (message !== "" && socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({ type: "chat", message: message }));
-                    messageInput.value = "";
-                }
-            }
-            sendButton.addEventListener("click", sendMessage);
-            messageInput.addEventListener("keydown", (event) => {
-                if (event.key === "Enter") {
-                    sendMessage();
-                }
-            });
-            const inputState = {
-                up: false,
-                down: false,
-                left: false,
-                right: false
-            };
+            let players = new Map();
+            let playerId = null;
+            let map = [];
             window.addEventListener("beforeunload", () => {
                 socket.close();
             });
@@ -143,10 +161,10 @@
                         playerId = data.id;
                         map = data.map;
                         for (const p of data.players) {
-                            players.set(p.id, { x: p.x, y: p.y });
+                            players.set(p.id, { x: p.x, y: p.y, team: p.team });
                         }
                     } else if (data.type === "playerJoined") {
-                        players.set(data.player.id, { x: data.player.x, y: data.player.y });
+                        players.set(data.player.id, { x: data.player.x, y: data.player.y, team: data.player.team });
                         addMessage(data.player.id + " joined the game");
                     } else if (data.type === "playerLeft") {
                         players.delete(data.id);
@@ -154,10 +172,12 @@
                     } else if (data.type == "playerMove") {
                         players.clear();
                         for (const p of data.players) {
-                            players.set(p.id, { x: p.x, y: p.y });
+                            players.set(p.id, { x: p.x, y: p.y, team: p.team });
                         }
                     } else if (data.type === "chat") {
                         addMessage(data.message);
+                    } else if (data.type === "paint") {
+                        map = data.map;
                     }
                 } catch (error) {
                     console.log("受信エラー");
@@ -191,49 +211,55 @@
             resizeCanvas();
             function draw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const centerX = Math.floor(canvas.width / 2);
-                const centerY = Math.floor(canvas.height / 2);
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
                 const you = players.get(playerId);
                 if (!you) {
                     return;
                 }
-                ctx.lineWidth = 2;
                 for (let y = 0; y < map.length; y++) {
                     for (let x = 0; x < map[y].length; x++) {
                         if (map[y][x] === ".") {
                             ctx.fillStyle = "rgba(0, 0, 0, 1)";
                         } else if (map[y][x] === "#") {
                             ctx.fillStyle = "rgba(255, 255, 255, 1)";
+                        } else if (map[y][x] === "R") {
+                            ctx.fillStyle = "rgba(255, 0, 0, 1)";
+                        } else if (map[y][x] === "G") {
+                            ctx.fillStyle = "rgba(0, 255, 0, 1)";
+                        } else if (map[y][x] === "B") {
+                            ctx.fillStyle = "rgba(0, 0, 255, 1)";
                         }
-                        ctx.fillRect(Math.floor((x - you.x) * 32) + centerX, Math.floor((y - you.y) * 32) + centerY, 32, 32);
+                        ctx.fillRect((x - you.x) * 32 + centerX - 1, (y - you.y) * 32 + centerY - 1, 32 + 1, 32 + 1);
                     }
                 }
+                ctx.lineWidth = 2;
                 for (const p of players.keys()) {
-                    if (p === playerId) {
-                        ctx.strokeStyle = "rgba(255, 0, 0, 1)";
-                    } else {
+                    if (players.get(p).team === "B") {
                         ctx.strokeStyle = "rgba(0, 0, 255, 1)";
+                    } else {
+                        ctx.strokeStyle = "rgba(255, 0, 0, 1)";
                     }
                     ctx.strokeRect(Math.floor((players.get(p).x - you.x) * 32) + centerX, Math.floor((players.get(p).y - you.y) * 32) + centerY, 16, 16);
                 }
             }
-            function move() {
+            function keysInput() {
                 if (document.activeElement !== messageInput) {
                     inputState.up = (keys["KeyW"] || keys["ArrowUp"]);
                     inputState.down = (keys["KeyS"] || keys["ArrowDown"]);
                     inputState.left = (keys["KeyA"] || keys["ArrowLeft"]);
                     inputState.right = (keys["KeyD"] || keys["ArrowRight"]);
+                    inputState.isPainting = (keys["ShiftLeft"] || keys["Space"]);
                 }
             }
             function sendMove() {
-                if (socket.readyState === WebSocket.OPEN && (inputState.up || inputState.down || inputState.left || inputState.right)) {
+                if (socket.readyState === WebSocket.OPEN && (inputState.up || inputState.down || inputState.left || inputState.right || inputState.isPainting)) {
                     socket.send(JSON.stringify({ type: "move", input: inputState }));
                 }
             }
-            //setInterval(sendMove, 10);
             function mainLoop() {
                 draw();
-                move();
+                keysInput();
                 sendMove();
                 requestAnimationFrame(mainLoop);
             }

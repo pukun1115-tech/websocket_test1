@@ -9,24 +9,24 @@ const playerIds = new Map();
 
 const map = [
     "####################",
-    "#..#...............#",
-    "##.#.####..........#",
-    "#..#.#.............#",
-    "#.#..#.............#",
-    "#...#..............#",
-    "#.###.###..........#",
-    "#.###...#..........#",
-    "#.#####.#..........#",
-    "#.#...#.#..........#",
-    "#.#.#.#.#..........#",
-    "#.#.#.#.#..........#",
-    "#.#.#.#.#..........#",
-    "#.#.#.#.#..........#",
-    "#.#.#.#..#.........#",
-    "#.#.#..#.#.........#",
-    "#.#..#...#.........#",
-    "#.##.#####.........#",
-    "#....#.............#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
     "####################",
 ];
 
@@ -231,7 +231,16 @@ function processReceivedData(socket, receiveBuffer) {
                                 player.y = nextY;
                             }
                         }
-                        broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) });
+                        broadcast(true, socket, { type: "playerMove", players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y, team: p.team })) });
+                    }
+                    if (obj.input.isPainting) {
+                        const paintingX = Math.floor(player.x + 0.25);
+                        const paintingY = Math.floor(player.y + 0.25);
+
+                        const newChar = player.team;
+                        const str = map[paintingY].slice(0, paintingX) + newChar + map[paintingY].slice(paintingX + 1);
+                        map[paintingY] = str;
+                        broadcast(true, socket, { type: "paint", map: map });
                     }
                 } else if (obj.type === "chat") {
                     broadcast(true, socket, { type: "chat", message: `${playerIds.get(socket)}: ${obj.message}` });
@@ -291,18 +300,24 @@ server.on("upgrade", (request, socket, head) => {
         return f.charAt(0).toUpperCase() + f.slice(1);
     }
     const playerId = createPlayerId();
-
+    let playerTeam;
+    if (Math.random() > 0.5) {
+        playerTeam = "B";
+    } else {
+        playerTeam = "R";
+    }
     players.set(playerId, {
         socket: socket,
         id: playerId,
         x: 1.25,
-        y: 1.25
+        y: 1.25,
+        team: playerTeam,
     });
     playerIds.set(socket, playerId);
-    sendTextFrame(socket, JSON.stringify({ type: "init", id: playerId, map: map, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y })) }));
-    broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 1.25, y: 1.25 } });
+    sendTextFrame(socket, JSON.stringify({ type: "init", id: playerId, map: map, players: Array.from(players.values()).map((p) => ({ id: p.id, x: p.x, y: p.y, team: p.team })) }));
+    broadcast(false, socket, { type: "playerJoined", player: { id: playerId, x: 1.25, y: 1.25, team: playerTeam } });
     console.log(playerId + " joined the game");
-    
+
     const MAX_BUFFER_SIZE = 512 * 512;
     let receiveBuffer = Buffer.alloc(0);
     socket.on("data", (data) => {
